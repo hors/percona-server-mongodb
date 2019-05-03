@@ -201,6 +201,19 @@ install_golang() {
     ln -s /usr/local/go1.11 /usr/local/go
 }
 
+install_python_packages_by_pip() {
+    get_system
+
+    if [ "x${RHEL}" == "x6" ]; then
+        pip2.7 install --user -r buildscripts/requirements.txt
+    elif [ "x${RHEL}" == "x8" ]; then
+        /usr/bin/pip3.6 install --user typing pyyaml regex Cheetah3
+        /usr/bin/pip2.7 install --user typing pyyaml regex Cheetah
+    else
+        pip install --user -r buildscripts/requirements.txt
+    fi
+}
+
 install_gcc_54_centos(){
     wget http://jenkins.percona.com/downloads/gcc-5.4.0/gcc-5.4.0_centos-$RHEL-x64.tar.gz -O /tmp/gcc-5.4.0_centos-$RHEL-x64.tar.gz
     tar -zxf /tmp/gcc-5.4.0_centos-$RHEL-x64.tar.gz
@@ -243,8 +256,8 @@ set_compiler(){
         export CC=/usr/bin/gcc-5
         export CXX=/usr/bin/g++-5
     else
-        export CC=/usr/local/gcc-5.4.0/bin/gcc-5.4
-        export CXX=/usr/local/gcc-5.4.0/bin/g++-5.4
+        export CC=/opt/rh/devtoolset-8/root/usr/bin/gcc
+        export CXX=/opt/rh/devtoolset-8/root/usr/bin/g++
     fi
 }
 
@@ -285,7 +298,7 @@ install_deps() {
         yum -y install rpmbuild rpm-build libpcap-devel gcc make cmake gcc-c++ openssl-devel
         yum -y install cyrus-sasl-devel snappy-devel zlib-devel bzip2-devel libpcap-devel
         yum -y install scons make rpm-build rpmbuild percona-devtoolset-gcc percona-devtoolset-binutils 
-        yum -y install percona-devtoolset-gcc-c++ percona-devtoolset-libstdc++-devel percona-devtoolset-valgrind-devel
+        yum -y install devtoolset-8 percona-devtoolset-gcc-c++ percona-devtoolset-libstdc++-devel percona-devtoolset-valgrind-devel
         yum -y install python27 python27-devel rpmlint libcurl-devel
         wget https://bootstrap.pypa.io/get-pip.py
         python2.7 get-pip.py
@@ -302,9 +315,9 @@ install_deps() {
         yum -y install python2-scons python2-pip python36-devel
         yum -y install redhat-rpm-config python2-devel
       fi
+
       if [ "x${RHEL}" == "x8" ]; then
-        /usr/bin/pip3.6 install --user typing pyyaml regex Cheetah3
-        /usr/bin/pip2.7 install --user typing pyyaml regex Cheetah
+          install_python_packages_by_pip
       fi
 #
       install_golang
@@ -454,23 +467,20 @@ build_rpm(){
     rpm2cpio ${SRC_RPM} | cpio -id
     TARF=$(find . -name 'percona-server-mongodb*.tar.gz' | sort | tail -n1)
     tar vxzf ${TARF} --wildcards '*/buildscripts' --strip=1
-    if [ "x${RHEL}" == "x6" ]; then
-      pip2.7 install --user -r buildscripts/requirements.txt
-    else
-      pip install --user -r buildscripts/requirements.txt
-    fi
+    install_python_packages_by_pip
+
     #
     cd $WORKDIR
-    if [ -f /opt/percona-devtoolset/enable ]; then
-    . /opt/percona-devtoolset/enable
+    if [ -f /opt/rh/devtoolset-8/enable ]; then
+    . /opt/rh/devtoolset-8/enable
     fi
 
     RHEL=$(rpm --eval %rhel)
     ARCH=$(echo $(uname -m) | sed -e 's:i686:i386:g')
 
     echo "CC and CXX should be modified once correct compiller would be installed on Centos"
-    export CC=/usr/local/gcc-5.4.0/bin/gcc-5.4
-    export CXX=/usr/local/gcc-5.4.0/bin/g++-5.4
+    export CC=/opt/rh/devtoolset-8/root/usr/bin/gcc
+    export CXX=/opt/rh/devtoolset-8/root/usr/bin/g++
     #
     echo "RHEL=${RHEL}" >> percona-server-mongodb-40.properties
     echo "ARCH=${ARCH}" >> percona-server-mongodb-40.properties
@@ -531,7 +541,7 @@ build_source_deb(){
     #
     mv ${TARFILE} ${PRODUCT}_${VERSION}.orig.tar.gz
     cd ${BUILDDIR}
-    pip install --user -r buildscripts/requirements.txt
+    install_python_packages_by_pip
 
     set_compiler
     fix_rules
@@ -581,7 +591,8 @@ build_deb(){
     dpkg-source -x ${DSC}
     #
     cd ${PRODUCT}-${VERSION}
-    pip install --user -r buildscripts/requirements.txt
+    pinstall_python_packages_by_pip
+
     #
     cp -av percona-packaging/debian/rules debian/
     set_compiler
@@ -609,8 +620,8 @@ build_tarball(){
     cd $WORKDIR
     TARFILE=$(basename $(find . -name 'percona-server-mongodb*.tar.gz' | sort | tail -n1))
 
-    if [ -f /opt/percona-devtoolset/enable ]; then
-    source /opt/percona-devtoolset/enable
+    if [ -f /opt/rh/devtoolset-8/enable ]; then
+    source /opt/rh/devtoolset-8/enable
     fi
     #
     export DEBIAN_VERSION="$(lsb_release -sc)"
@@ -662,7 +673,8 @@ build_tarball(){
 
     # Finally build Percona Server for MongoDB with SCons
     cd ${PSMDIR_ABS}
-    pip install --user -r buildscripts/requirements.txt
+    install_python_packages_by_pip
+
     if [ ${DEBUG} = 0 ]; then
         buildscripts/scons.py CC=${CC} CXX=${CXX} --disable-warnings-as-errors --release --ssl --opt=on -j$NJOBS --use-sasl-client --wiredtiger --audit --inmemory --hotbackup CPPPATH=${INSTALLDIR}/include LIBPATH=${INSTALLDIR}/lib ${PSM_TARGETS}
     else
